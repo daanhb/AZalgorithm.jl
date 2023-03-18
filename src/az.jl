@@ -13,10 +13,11 @@ end
 
 function randomized_column_space(A, r)
     m, n = size(A)
-    Col = zeros(eltype(A), m, r)
-    R = rand(eltype(A), n, r)
+    T = eltype(A)
+    Col = zeros(T, m, r)
+    R = rand(real(T), n, r)
     for i in 1:r
-        Col[:,i] = A*R[:,r]
+        Col[:,i] = A*R[:,i]
     end
     R, Col
 end
