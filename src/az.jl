@@ -1,14 +1,22 @@
 
-function tsvd(A, b; tol)
+"""
+    x,rank = tsvd(A, b, threshold)
+
+Compute the solution of `Ax=b` using total SVD with the given tolerance.
+
+The total svd method discards all singular values small than the threshold.
+"""
+function tsvd(A, b, threshold)
     u,s,v = svd(A; full=false)
-    I = findlast(s/s[1] .>= tol)
+    I = findlast(s/s[1] .>= threshold)
     if I < size(A,2)
         u = u[:,1:I]
         v = ((v')[1:I,:])'
         s = s[1:I]
     end
     sinv = s.^(-1)
-    v*(sinv .* (u'*b))
+    x = v*(sinv .* (u'*b))
+    x, I
 end
 
 function randomized_column_space(A, r)
@@ -44,13 +52,25 @@ function az(A, Zstar, b;
     m, n = size(A)
     AminAZA = az_AminAZA(A, Zstar)
     IminAZ = az_IminAZ(A, Zstar)
-    az_core(A, Zstar, AminAZA, IminAZ, b; rank_estimate, tol)
+
+    # Step 1
+    x1, rank = az_step1(AminAZA, IminAZ, b; rank_estimate, tol)
+    # Step 2
+    x2 = az_step2(x1, A, Zstar, b)
+    # Step 3
+    x = x1+x2
+
+    if verbose
+        println("AZ algorithm completed step 1 with rank: $(rank)")
+    end
+    x
 end
 
-function az_core(A, Zstar, AminAZA, IminAZ, b; rank_estimate, tol)
+function az_step1(AminAZA, IminAZ, b; rank_estimate, tol)
     R, Col = randomized_column_space(AminAZA, rank_estimate)
-    u1 = tsvd(Col, IminAZ*b; tol)   # step 1
+    u1,rank = tsvd(Col, IminAZ*b, tol)
     x1 = R*u1
-    x2 = Zstar*(b - A*x1)           # step 2
-    x1+x2                           # step 3
+    x1,rank
 end
+
+az_step2(x1, A, Zstar, b) = Zstar*(b - A*x1)
