@@ -1,0 +1,13 @@
+name = "AZalgorithm"
+uuid = "90d92579-6541-4ede-9175-79584c56f705"
+authors = ["Daan Huybrechs <daan.huybrechs@kuleuven.be>"]
+version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
+LowRankApprox = "898213cb-b102-5a47-900c-97e73b919f73"
+
+[compat]
+LinearMaps = "3.10"
+LowRankApprox = "0.5.2"
