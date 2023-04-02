@@ -1,4 +1,9 @@
 
+"A tolerance for use in the AZ algorithm."
+az_tolerance(x) = az_tolerance(eltype(x))
+az_tolerance(::Type{Complex{T}}) where T = az_tolerance(T)
+az_tolerance(::Type{T}) where {T <: AbstractFloat} = 100eps(T)
+
 "Construct the AZ operator `A - AZ'A` in operator form."
 az_AminAZA(A::AbstractMatrix, Zstar::AbstractMatrix) =
     A - A*Zstar*LinearMaps.LinearMap(A)
@@ -19,22 +24,15 @@ struct AZFactorization
     Zstar               # the Z' operator
     AminAZA             # A - AZ'A
     IminAZ              # I - AZ'
-    R                   # set of random vectors
     az1_fact            # low-rank factorization of AminAZA*R
 end
 
 # apply AZ to a vector
 function Base.:*(F::AZFactorization, b)
     # This is the AZ algorithm:
-    # - step 1
-    b1 = F.IminAZ*b
-    u1 = F.az1_fact \ b1
-    x1 = F.R * u1
-    # - step 2
-    b2 = b - F.A*x1
-    x2 = F.Zstar * b2
-    # - step 3
-    x1+x2
+    x1 = F.az1_fact \ (F.IminAZ*b)  # step 1
+    x2 = F.Zstar * (b - F.A*x1)     # step 2
+    x1+x2                           # step 3
 end
 
 """
@@ -45,15 +43,21 @@ Compute an AZ factorization with the given `(A,Z)` pair.
 The function accepts the same options as the `az` function.
 """
 function az_factorize(A, Zstar;
-        tol             = az_tolerance(A),
-        rank_estimate   = az_rank_estimate(A, Zstar; tol),
-        adaptive_rank   = false)
+        atol            = 0.0,
+        rtol            = az_tolerance(A),
+        rank            = -1,
+        verbose         = false)
 
     AminAZA = az_AminAZA(A, Zstar)
     IminAZ = az_IminAZ(A, Zstar)
-    R, Col = randomized_column_space(AminAZA, rank_estimate)
-    az1_fact = tsvd_factorize(Col, tol)
-    AZFactorization(A, Zstar, AminAZA, IminAZ, R, az1_fact)
+    if rank > 0
+        az1_fact = psvdfact(AminAZA; atol, rtol, rank)
+    else
+        # let psvdfact determine rank adaptively
+        az1_fact = psvdfact(AminAZA; atol, rtol)
+    end
+    verbose && println("AZ factorization completed with rank: $(length(az1_fact.:S))")
+    AZFactorization(A, Zstar, AminAZA, IminAZ, az1_fact)
 end
 
 """
@@ -63,10 +67,11 @@ Apply the AZ algorithm to the right hand side vector `b` with the given
 combination of `A` and `Z`. The matrix `Z` is given in its adjoint form `Z'`.
 """
 function az(A, Zstar, b;
-        tol             = az_tolerance(A),
-        rank_estimate   = az_rank_estimate(A, Zstar; tol),
-        adaptive_rank   = false)
+        atol            = 0.0,
+        rtol            = az_tolerance(A),
+        rank            = -1,
+        verbose         = false)
 
-    fact = az_factorize(A, Zstar; tol, rank_estimate, adaptive_rank)
+    fact = az_factorize(A, Zstar; atol, rtol, rank, verbose)
     fact * b
 end

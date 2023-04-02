@@ -3,6 +3,7 @@ module AZalgorithm
 using LinearAlgebra, LinearMaps, LowRankApprox
 
 export az,
+    az_factorize,
     tsvd
 
 include("tsvd.jl")
