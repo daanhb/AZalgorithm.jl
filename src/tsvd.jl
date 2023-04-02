@@ -1,17 +1,3 @@
-
-"Approximate the column space of `A` using a set of random vectors."
-function randomized_column_space(A, r)
-    m, n = size(A)
-    T = eltype(A)
-    Col = zeros(T, m, r)
-    R = rand(real(T), n, r)
-    for i in 1:r
-        Col[:,i] = A*R[:,i]
-    end
-    R, Col
-end
-
-
 """
      tsvd(A, b, threshold)
 
@@ -25,7 +11,6 @@ function tsvd(A, b, threshold)
     x = v*(sinv .* (u'*b))
     x
 end
-
 
 """
     u,s,v = tsvd_factorize(A, threshold)

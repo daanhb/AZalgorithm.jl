@@ -24,15 +24,17 @@ struct AZFactorization
     Zstar               # the Z' operator
     AminAZA             # A - AZ'A
     IminAZ              # I - AZ'
-    az1_fact            # low-rank factorization of AminAZA*R
+    az1_fact            # low-rank factorization of AminAZA
 end
 
+Base.:*(F::AZFactorization, b) = _az(b, F.A, F.Zstar, F.az1_fact, F.IminAZ)
+
 # apply AZ to a vector
-function Base.:*(F::AZFactorization, b)
+function _az(b, A, Zstar, az1_fact, IminAZ)
     # This is the AZ algorithm:
-    x1 = F.az1_fact \ (F.IminAZ*b)  # step 1
-    x2 = F.Zstar * (b - F.A*x1)     # step 2
-    x1+x2                           # step 3
+    x1 = az1_fact \ (IminAZ*b)  # step 1
+    x2 = Zstar * (b - A*x1)     # step 2
+    x1+x2                       # step 3
 end
 
 """
@@ -50,10 +52,9 @@ function az_factorize(A, Zstar;
 
     AminAZA = az_AminAZA(A, Zstar)
     IminAZ = az_IminAZ(A, Zstar)
-    if rank > 0
+    if rank > 0     # use fixed maximal rank
         az1_fact = psvdfact(AminAZA; atol, rtol, rank)
-    else
-        # let psvdfact determine rank adaptively
+    else            # let psvdfact determine rank adaptively
         az1_fact = psvdfact(AminAZA; atol, rtol)
     end
     verbose && println("AZ factorization completed with rank: $(length(az1_fact.:S))")
@@ -66,12 +67,7 @@ end
 Apply the AZ algorithm to the right hand side vector `b` with the given
 combination of `A` and `Z`. The matrix `Z` is given in its adjoint form `Z'`.
 """
-function az(A, Zstar, b;
-        atol            = 0.0,
-        rtol            = az_tolerance(A),
-        rank            = -1,
-        verbose         = false)
-
-    fact = az_factorize(A, Zstar; atol, rtol, rank, verbose)
+function az(A, Zstar, b; options...)
+    fact = az_factorize(A, Zstar; options...)
     fact * b
 end
