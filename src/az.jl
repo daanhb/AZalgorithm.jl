@@ -19,7 +19,10 @@ az_IminAZ(A, Zstar) = I - A*Zstar
 
 
 "Storage type for all operators involved in the AZ algorithm."
-struct AZFactorization
+abstract type AZFactorization end
+
+"Factorization obtained by LowRankApprox.jl."
+struct LRA_AZFact <: AZFactorization
     A                   # the A operator
     Zstar               # the Z' operator
     AminAZA             # A - AZ'A
@@ -27,12 +30,30 @@ struct AZFactorization
     az1_fact            # low-rank factorization of AminAZA
 end
 
-Base.:*(F::AZFactorization, b) = _az(b, F.A, F.Zstar, F.az1_fact, F.IminAZ)
+"Factorization obtained by LowRankApprox.jl."
+struct RandCol_AZFact <: AZFactorization
+    A                   # the A operator
+    Zstar               # the Z' operator
+    AminAZA             # A - AZ'A
+    IminAZ              # I - AZ'
+    R                   # random matrix
+    col_fact            # factorization of column space of AminAZA
+end
 
 # apply AZ to a vector
-function _az(b, A, Zstar, az1_fact, IminAZ)
-    # This is the AZ algorithm:
+Base.:*(F::LRA_AZFact, b) = az_lra(b, F.A, F.Zstar, F.az1_fact, F.IminAZ)
+Base.:*(F::RandCol_AZFact, b) =
+    az_randcol(b, F.A, F.Zstar, F.R, F.col_fact, F.IminAZ)
+
+function az_lra(b, A, Zstar, az1_fact, IminAZ)
     x1 = az1_fact \ (IminAZ*b)  # step 1
+    x2 = Zstar * (b - A*x1)     # step 2
+    x1+x2                       # step 3
+end
+
+function az_randcol(b, A, Zstar, R, col_fact, IminAZ)
+    u1 = col_fact \ (IminAZ*b)
+    x1 = R * u1                 # step 1
     x2 = Zstar * (b - A*x1)     # step 2
     x1+x2                       # step 3
 end
@@ -47,18 +68,27 @@ The function accepts the same options as the `az` function.
 function az_factorize(A, Zstar;
         atol            = 0.0,
         rtol            = az_tolerance(A),
-        rank            = -1,
+        method          = :lra,
+        rank            = method == :lra ? -1 : 30,
         verbose         = false)
 
     AminAZA = az_AminAZA(A, Zstar)
     IminAZ = az_IminAZ(A, Zstar)
-    if rank > 0     # use fixed maximal rank
-        az1_fact = psvdfact(AminAZA; atol, rtol, rank)
-    else            # let psvdfact determine rank adaptively
-        az1_fact = psvdfact(AminAZA; atol, rtol)
+    if method == :lra
+        if rank > 0     # use fixed maximal rank
+            az1_fact = psvdfact(AminAZA; atol, rtol, rank)
+        else            # let psvdfact determine rank adaptively
+            az1_fact = psvdfact(AminAZA; atol, rtol)
+        end
+        verbose && println("AZ factorization completed with rank: $(length(az1_fact.:S))")
+        LRA_AZFact(A, Zstar, AminAZA, IminAZ, az1_fact)
+    elseif method == :randcol
+        R, Col = randomized_column_space(AminAZA, rank)
+        col_fact = tsvd_factorize(Col, atol, rtol)
+        RandCol_AZFact(A, Zstar, AminAZA, IminAZ, R, col_fact)
+    else
+        error("Unkown factorization method: $(method)")
     end
-    verbose && println("AZ factorization completed with rank: $(length(az1_fact.:S))")
-    AZFactorization(A, Zstar, AminAZA, IminAZ, az1_fact)
 end
 
 """

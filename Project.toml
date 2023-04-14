@@ -1,7 +1,7 @@
 name = "AZalgorithm"
 uuid = "90d92579-6541-4ede-9175-79584c56f705"
 authors = ["Daan Huybrechs <daan.huybrechs@kuleuven.be>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
