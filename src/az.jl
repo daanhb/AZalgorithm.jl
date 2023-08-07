@@ -17,6 +17,28 @@ az_IminAZ(A::AbstractMatrix, Zstar::AbstractMatrix) =
 az_AminAZA(A, Zstar) = A - A*Zstar*A
 az_IminAZ(A, Zstar) = I - A*Zstar
 
+"Construct the subblock (A - AZ'A)12"
+function enrichedaz_AminAZA_12(A11, A12, Z11star)
+    MN = size(A12,1)
+    K = size(A12,2)
+    AminAZA = zeros(eltype(A12), MN, K)
+    for i in 1:K
+        col = A12*I[1:K,i]
+        AminAZA[:,i] = (I - A11*Z11star)*col
+    end
+    AminAZA
+end
+
+"Construct the subblock (A - AZ'A)22"
+function enrichedaz_AminAZA_22(A12, A21, A22, Z11star)
+    MK = size(A22,1)
+    K = size(A22,2)
+    AminAZA = zeros(eltype(A22), MK, K)
+    for i in 1:K
+        AminAZA[:,i] = (A22-A21*Z11star*A12)*I[1:K,i]
+    end
+    AminAZA
+end
 
 "Storage type for all operators involved in the AZ algorithm."
 abstract type AZFactorization end
@@ -41,7 +63,7 @@ struct RandCol_AZFact <: AZFactorization
 end
 
 "Factorization of the AZ algorithm for enriched basis using the inverse of A11 (A = [A11 A12; A21 A22])."
-struct EnrichedInv_AZFact <: AZFactorization
+struct Inv_EnrichedAZFact <: AZFactorization
     A12                 # the A12 operator
     A21                 # the A21 operator
     A22                 # the A22 operator
@@ -50,7 +72,7 @@ struct EnrichedInv_AZFact <: AZFactorization
 end
 
 "Factorization of the AZ algorithm for enriched basis using the left inverse of A11 (A = [A11 A12; A21 A22])."
-struct EnrichedLInv_AZFact <: AZFactorization
+struct Linv_EnrichedAZFact <: AZFactorization
     A11                 # the A11 operator
     A12                 # the A12 operator
     A21                 # the A21 operator
@@ -61,7 +83,7 @@ end
 
 
 "Factorization of the AZ algorithm for enriched basis using the left inverse of A11 (A = [A11 A12])."
-struct EnrichedLInv_reduced_AZFact <: AZFactorization
+struct Linvred_EnrichedAZFact <: AZFactorization
     A11                 # the A11 operator
     A12                 # the A12 operator
     Z11star             # the Z11' operator
@@ -72,12 +94,12 @@ end
 Base.:*(F::LRA_AZFact, b) = az_lra(b, F.A, F.Zstar, F.az1_fact, F.IminAZ)
 Base.:*(F::RandCol_AZFact, b) =
     az_randcol(b, F.A, F.Zstar, F.R, F.col_fact, F.IminAZ)
-Base.:*(F::EnrichedInv_AZFact, b) = 
-    az_enrichedinv(b[1], b[2], F.A12, F.A21, F.Z11star, F.AminAZA)
-Base.:*(F::EnrichedLInv_AZFact, b) = 
-    az_enrichedlinv(b[1], b[2], F.A11, F.A12, F.A21, F.Z11star, F.AminAZA)
-Base.:*(F::EnrichedLInv_reduced_AZFact, b) = 
-    az_enrichedlinv_reduced(b, F.A11, F.A12, F.Z11star, F.AminAZA)
+Base.:*(F::Inv_EnrichedAZFact, b) = 
+    enrichedaz_inv(b, F.A12, F.A21, F.Z11star, F.AminAZA)
+Base.:*(F::Linv_EnrichedAZFact, b) = 
+    enrichedaz_linv(b, F.A11, F.A12, F.A21, F.Z11star, F.AminAZA)
+Base.:*(F::Linvred_EnrichedAZFact, b) = 
+    enrichedaz_linvred(b, F.A11, F.A12, F.Z11star, F.AminAZA)
 
 function az_lra(b, A, Zstar, az1_fact, IminAZ)
     x1 = az1_fact \ (IminAZ*b)  # step 1
@@ -92,22 +114,24 @@ function az_randcol(b, A, Zstar, R, col_fact, IminAZ)
     x1+x2                       # step 3
 end
 
-function az_enrichedinv(b1, b2, A12, A21, Z11star, AminAZA)
-    x1 = AminAZA \ (b2 - A21*Z11star*b1)    # step 1
-    x2 = Z11star * (b1 - A12*x1)            # step 2
-    (x2,x1)                                 # step 3
+function enrichedaz_inv(b, A12, A21, Z11star, AminAZA)
+    MN = size(Z11star,2)
+    x1 = AminAZA \ (b[MN+1:end] - A21*Z11star*b[1:MN])    # step 1
+    x2 = Z11star * (b[1:MN] - A12*x1)                     # step 2
+    [x2; x1]                                              # step 3
 end
 
-function az_enrichedlinv(b1, b2, A11, A12, A21, Z11star, AminAZA)
-    x1 = AminAZA \ [b1 - A11*Z11star*b1; b2 - A21*Z11star*b1]       # step 1
-    x2 = Z11star * (b1 - A12*x1)                                    # step 2
-    (x2,x1)                                                         # step 3
+function enrichedaz_linv(b, A11, A12, A21, Z11star, AminAZA)
+    MN = size(Z11star,2)
+    x1 = AminAZA \ [(I - A11*Z11star)*b[1:MN]; b[MN+1:end] - A21*Z11star*b[1:MN]]       # step 1
+    x2 = Z11star * (b[1:MN] - A12*x1)                                                   # step 2
+    [x2; x1]                                                                            # step 3
 end
 
-function az_enrichedlinv_reduced(b, A11, A12, Z11star, AminAZA)
+function enrichedaz_linvred(b, A11, A12, Z11star, AminAZA)
     x1 = AminAZA \ (b - A11*Z11star*b)      # step 1
     x2 = Z11star * (b - A12*x1)             # step 2
-    (x2,x1)                                 # step 3
+    [x2; x1]                                # step 3
 end
 
 """
@@ -144,25 +168,44 @@ function az_factorize(A, Zstar;
 end
 
 """
-    enrichedaz_factorize(A, Zstar)
+    enrichedazinv_factorize(A12, A21, A22, Z11star)
 
 """
-function enrichedaz_factorize(Z11star, A...; 
+function enrichedazinv_factorize(A12, A21, A22, Z11star; 
     atol            = 0.0,
-    rtol            = az_tolerance(A[1]),
+    rtol            = az_tolerance(A12),
     verbose         = false)
 
-    if(length(A) == 2)
-        AminAZA = tsvd_factorize(Matrix(A[2] - A[1]*Z11star*A[2]), atol, rtol)
-        EnrichedLInv_reduced_AZFact(A[1], A[2], Z11star, AminAZA)
-    elseif(length(A) == 3)
-        AminAZA = tsvd_factorize(Matrix(A[3] - A[2]*Z11star*A[1]), atol, rtol)
-        EnrichedInv_AZFact(A[1], A[2], A[3], Z11star, AminAZA)
-    elseif(length(A) == 4)
-        AminAZA = tsvd_factorize([Matrix(A[2] - A[1]*Z11star*A[2]); Matrix(A[4] - A[3]*Z11star*A[2])], atol, rtol)
-        EnrichedLInv_AZFact(A[1], A[2], A[3], A[4], Z11star, AminAZA)
-    end
+    AminAZA = tsvd_factorize(enrichedaz_AminAZA_22(A12, A21, A22, Z11star), atol, rtol)
+    Inv_EnrichedAZFact(A12, A21, A22, Z11star, AminAZA)
 end
+
+"""
+    enrichedazlinv_factorize(A11, A12, A21, A22, Z11star)
+
+"""
+function enrichedazlinv_factorize(A11, A12, A21, A22, Z11star; 
+    atol            = 0.0,
+    rtol            = az_tolerance(A11),
+    verbose         = false)
+
+    AminAZA = tsvd_factorize([enrichedaz_AminAZA_12(A11, A12, Z11star); enrichedaz_AminAZA_22(A12, A21, A22, Z11star)], atol, rtol)
+    Linv_EnrichedAZFact(A11, A12, A21, A22, Z11star, AminAZA)
+end
+
+"""
+    enrichedazlinvred_factorize(A11, A12, Z11star)
+
+"""
+function enrichedazlinvred_factorize(A11, A12, Z11star; 
+    atol            = 0.0,
+    rtol            = az_tolerance(A11),
+    verbose         = false)
+
+    AminAZA = tsvd_factorize(enrichedaz_AminAZA_12(A11, A12, Z11star), atol, rtol)
+    Linvred_EnrichedAZFact(A11, A12, Z11star, AminAZA)
+end
+
 
 """
     az(A, Zstar, b)
@@ -176,37 +219,37 @@ function az(A, Zstar, b; options...)
 end
 
 """
-    az(A12, A21, A22, Z11star, b1, b2)
+    enrichedaz(A12, A21, A22, Z11star, b)
 
-Apply the AZ algorithm for enriched bases to the right hand side vector `b` = [`b1`; `b2`] with a 
+Apply the AZ algorithm for enriched bases to the right hand side vector `b` with a 
 combination of `A` = [`A11` `A12`; `A21` `A22`] and `Z` = [`Z11` 0; 0 0]. The matrix `Z11` is 
 given in its adjoint form `Z11'`. The adjoint matrix `Z11'` is the inverse of the matrix `A11`.
 """
-function az(A12, A21, A22, Z11star, b1, b2; options...)
-    fact = enrichedaz_factorize(Z11star, A12, A21, A22; options...)
-    fact * (b1, b2)
+function enrichedaz(A12, A21, A22, Z11star, b; options...)
+    fact = enrichedazinv_factorize(A12, A21, A22, Z11star; options...)
+    fact * b
 end
 
 """
-    az(A11, A12, Z11star, b)
+    enrichedaz(A11, A12, Z11star, b)
 
 Apply the AZ algorithm for enriched bases to the right hand side vector `b` with a 
 combination of `A` = [`A11` `A12`] and `Z` = [`Z11` 0]. The matrix `Z11` is 
 given in its adjoint form `Z11'`. The adjoint matrix `Z11'` is the left inverse of the matrix `A11`.
 """
-function az(A11, A12, Z11star, b; options...)
-    fact = enrichedaz_factorize(Z11star, A11, A12; options...)
+function enrichedaz(A11, A12, Z11star, b; options...)
+    fact = enrichedazlinvred_factorize(A11, A12, Z11star; options...)
     fact * b
 end
 
 """
-    az(A11, A12, A21, A22, Z11star, b1, b2)
+    enrichedaz(A11, A12, A21, A22, Z11star, b)
 
-Apply the AZ algorithm for enriched bases to the right hand side vector `b` = [`b1`; `b2`] with a 
+Apply the AZ algorithm for enriched bases to the right hand side vector `b` with a 
 combination of `A` = [`A11` `A12`; `A21` `A22`] and `Z` = [`Z11` 0; 0 0]. The matrix `Z11` is 
 given in its adjoint form `Z11'`. The adjoint matrix `Z11'` is the left inverse of the matrix `A11`.
 """
-function az(A11, A12, A21, A22, Z11star, b1, b2; options...)
-    fact = enrichedaz_factorize(Z11star, A11, A12, A21, A22; options...)
-    fact * (b1, b2)
+function enrichedaz(A11, A12, A21, A22, Z11star, b; options...)
+    fact = enrichedazlinv_factorize(A11, A12, A21, A22, Z11star; options...)
+    fact * b
 end

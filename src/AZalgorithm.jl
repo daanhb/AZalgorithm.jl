@@ -3,6 +3,7 @@ module AZalgorithm
 using LinearAlgebra, LinearMaps, LowRankApprox
 
 export az,
+    enrichedaz,
     az_factorize,
     tsvd,
     tsvd_factorize
